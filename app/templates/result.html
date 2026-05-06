@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pothole Analysis — Pipeline Results</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0a0f;
+            color: #e8e8f0;
+            min-height: 100vh;
+            padding: 40px 20px 60px;
+        }
+
+        /* ── Header ─────────────────────────────────── */
+        .header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+        .header .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #6c47ff22, #ff6b6b22);
+            border: 1px solid #6c47ff55;
+            color: #a78bfa;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            padding: 5px 14px;
+            border-radius: 20px;
+            margin-bottom: 16px;
+        }
+        .header h1 {
+            font-size: clamp(24px, 4vw, 38px);
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff 30%, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.2;
+            margin-bottom: 10px;
+        }
+
+        /* ── Layout ─────────────────────────────────── */
+        .main-layout {
+            display: flex;
+            gap: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+            flex-wrap: wrap;
+        }
+        .left-panel {
+            flex: 2;
+            min-width: 600px;
+        }
+        .right-panel {
+            flex: 1;
+            min-width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        /* ── Visuals ────────────────────────────────── */
+        .visual-card {
+            background: #13131f;
+            border: 1px solid #1e1e30;
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+        .visual-card h3 {
+            padding: 16px 20px;
+            font-size: 16px;
+            border-bottom: 1px solid #1e1e30;
+            background: #0d0d18;
+        }
+        .visual-card img {
+            width: 100%;
+            display: block;
+        }
+
+        /* ── Info Panel ─────────────────────────────── */
+        .info-panel {
+            background: #13131f;
+            border: 1px solid #1e1e30;
+            border-radius: 16px;
+            padding: 20px;
+        }
+        .info-panel h3 {
+            font-size: 16px;
+            margin-bottom: 16px;
+            color: #a78bfa;
+            border-bottom: 1px solid #1e1e30;
+            padding-bottom: 10px;
+        }
+        .stat-box {
+            background: #0d0d18;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid #1e1e30;
+            border-left: 4px solid #1e1e30; /* dynamic border */
+        }
+        .stat-box.sev-High { border-left-color: #f87171; }
+        .stat-box.sev-Medium { border-left-color: #f59e0b; }
+        .stat-box.sev-Low { border-left-color: #34d399; }
+        
+        .stat-box h4 {
+            font-size: 15px;
+            color: #ffffff;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .stat-box .badge-sev {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .stat-box.sev-High .badge-sev { background: #f8717133; color: #f87171; }
+        .stat-box.sev-Medium .badge-sev { background: #f59e0b33; color: #f59e0b; }
+        .stat-box.sev-Low .badge-sev { background: #34d39933; color: #34d399; }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+        }
+        .stat-item .lbl { color: #9ca3af; }
+        .stat-item .val { font-weight: 500; color: #e8e8f0; }
+
+        /* ── Chatbot ────────────────────────────────── */
+        .chatbot {
+            background: #13131f;
+            border: 1px solid #1e1e30;
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 400px;
+        }
+        .chatbot h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: #60a5fa;
+            border-bottom: 1px solid #1e1e30;
+            padding-bottom: 10px;
+        }
+        .chat-log {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 14px;
+        }
+        .msg {
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 90%;
+        }
+        .msg.user {
+            background: #2a2a3e;
+            align-self: flex-end;
+        }
+        .msg.bot {
+            background: #1e1e30;
+            align-self: flex-start;
+            color: #a78bfa;
+        }
+        .chat-input {
+            display: flex;
+            gap: 8px;
+        }
+        .chat-input input {
+            flex: 1;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #2a2a3e;
+            background: #0d0d18;
+            color: white;
+            outline: none;
+        }
+        .chat-input button {
+            background: #6c47ff;
+            color: white;
+            border: none;
+            padding: 0 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .chat-input button:hover {
+            background: #5b3ce0;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+        }
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 13px 28px;
+            background: linear-gradient(135deg, #6c47ff, #a855f7);
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: 10px;
+        }
+        @media (max-width: 900px) {
+            .left-panel, .right-panel { min-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="badge">Analysis Complete</div>
+        <h1>Pothole Results & Reasoning</h1>
+    </div>
+
+    <div class="main-layout">
+        
+        <!-- Left: Visualization -->
+        <div class="left-panel">
+            <div class="visual-card">
+                <h3>Final Visualization Grid</h3>
+                <img src="{{ url_for('static', filename='final_visuals/' + filename) }}" alt="Final Visualization">
+            </div>
+            
+            <div class="visual-card">
+                <h3>Masked Depth Fusion</h3>
+                <img src="{{ url_for('static', filename='fusion/masked_depth_color.png') }}"
+                     alt="Masked Depth Fusion"
+                     onerror="this.src='{{ url_for('static', filename='fusion/masked_depth.png') }}'">
+            </div>
+        </div>
+
+        <!-- Right: Info Panel & Chatbot -->
+        <div class="right-panel">
+            
+            <div class="info-panel">
+                <h3>Pothole Statistics</h3>
+                {% if stats.num_potholes == 0 %}
+                    <p>No potholes detected in this image.</p>
+                {% else %}
+                    <div style="margin-bottom: 16px; font-weight: 600; color: #a78bfa;">
+                        Total Potholes: {{ stats.num_potholes }}
+                    </div>
+                    {% for feat in stats.features %}
+                        <div class="stat-box sev-{{ feat.severity }}">
+                            <h4>
+                                Pothole ID: {{ feat.pothole_id|int }}
+                                <span class="badge-sev">{{ feat.severity }}</span>
+                            </h4>
+                            <div class="stat-grid">
+                                <div class="stat-item">
+                                    <span class="lbl">Area:</span>
+                                    <span class="val">{{ feat.area_m2 }} m&sup2; (approx)</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="lbl">Depth:</span>
+                                    <span class="val">{{ feat.depth_cat }} ({{ feat.depth_cm }})</span>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="chatbot">
+                <h3>AI Reasoning Engine</h3>
+                <div class="chat-log" id="chatLog">
+                    <div class="msg bot">Hello! I am your pothole reasoning assistant. You can ask me questions about the detected potholes, severity, or repair recommendations.</div>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="Ask a question..." onkeypress="handleEnter(event)">
+                    <button onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="footer">
+        <a href="/" class="back-btn">← Analyze Another Image</a>
+    </div>
+
+    <script>
+        function handleEnter(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const inputEl = document.getElementById('chatInput');
+            const logEl = document.getElementById('chatLog');
+            const q = inputEl.value.trim();
+            if (!q) return;
+
+            // Add user message
+            const userMsg = document.createElement('div');
+            userMsg.className = 'msg user';
+            userMsg.innerText = q;
+            logEl.appendChild(userMsg);
+            inputEl.value = '';
+            
+            logEl.scrollTop = logEl.scrollHeight;
+
+            // Send request
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: q })
+                });
+                const data = await res.json();
+                
+                // Add bot message
+                const botMsg = document.createElement('div');
+                botMsg.className = 'msg bot';
+                botMsg.innerText = data.answer;
+                logEl.appendChild(botMsg);
+                logEl.scrollTop = logEl.scrollHeight;
+            } catch (err) {
+                console.error(err);
+                const errMsg = document.createElement('div');
+                errMsg.className = 'msg bot';
+                errMsg.style.color = '#f87171';
+                errMsg.innerText = "Failed to connect to Reasoning Engine.";
+                logEl.appendChild(errMsg);
+            }
+        }
+    </script>
+</body>
+</html>

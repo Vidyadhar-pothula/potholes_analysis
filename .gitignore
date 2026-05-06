@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Mac OS folder
+__MACOSX/
+
+# Virtual environment (if any)
+venv/
+env/
+.venv/
+.env
+
+# Models
+models/*.pth
+models/*.pt
+
+# Datasets
+dataset/
+
+# User uploads and generated files
+app/static/uploads/
+app/static/masks/
+app/static/depth/
+
+# IDE files
+.vscode/
+.idea/

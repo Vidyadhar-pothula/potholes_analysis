@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "potholes_analysis-main",
+			"path": "."
+		},
+		{
+			"name": "dataset",
+			"path": "../../Desktop/Pothole Research/dataset/archive-2/dataset"
+		},
+		{
+			"name": "annotations",
+			"path": "../../Desktop/Pothole Research/dataset/archive-2/annotations"
+		}
+	],
+	"settings": {}
+}
