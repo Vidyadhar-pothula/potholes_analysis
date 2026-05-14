@@ -15,7 +15,8 @@ from inference_segmentation import generate_segmentation_masks
 from inference_depth import generate_depth_maps
 from fusion import apply_mask
 from visualization import create_final_visualization
-from reasoning_engine import ReasoningEngine
+from llm_reasoning_v2 import StructuredReasoningEngine
+from inference_metric_depth import generate_metric_depth
 
 app = Flask(__name__)
 
@@ -34,7 +35,7 @@ app.config['DEPTH_FOLDER']  = DEPTH_FOLDER
 app.config['FUSION_FOLDER'] = FUSION_FOLDER
 app.config['FINAL_VIS_FOLDER'] = FINAL_VIS_FOLDER
 
-reasoning_engine = ReasoningEngine()
+reasoning_engine = StructuredReasoningEngine()
 
 # Global to store stats for the chatbot
 current_stats = {}
@@ -91,6 +92,10 @@ def index():
             # Run Inference Pipelines
             generate_segmentation_masks(upload_dir, mask_dir, MODEL_PATH)
             generate_depth_maps(upload_dir, depth_dir)
+            
+            # Generate Real-World Metric Depth
+            metric_depth_dir = os.path.join(base_dir, 'outputs', 'metric_depth')
+            generate_metric_depth(upload_dir, metric_depth_dir)
 
             # Run Fusion Layer — apply mask onto depth map
             mask_file  = os.path.join(mask_dir,  filename)
@@ -134,8 +139,30 @@ def chat():
         return jsonify({"answer": "Please ask a valid question."})
     
     global current_stats
-    answer = reasoning_engine.get_response(question, current_stats)
-    return jsonify({"answer": answer})
+    if not current_stats:
+        return jsonify({"answer": "No potholes detected yet."})
+        
+    import json
+    feat = current_stats[0]
+    area = feat.get('area_m2', 0)
+    
+    # Extract raw float from depth string
+    raw_depth = str(feat.get('depth_cm', '0'))
+    depth_val = float(''.join(c for c in raw_depth if c.isdigit() or c == '.')) if any(c.isdigit() for c in raw_depth) else 0.0
+    
+    volume = feat.get('volume_cm3', 0)
+    severity = feat.get('severity', 'Unknown')
+    priority = feat.get('priority_score', 0)
+    
+    raw_json = reasoning_engine.generate_report(area, depth_val, volume, severity, priority, "Center Lane")
+    
+    try:
+        ans_dict = json.loads(raw_json)
+        formatted_answer = f"<strong>Repair Priority: {ans_dict['repair_priority_score']}/100</strong><br><br><strong>CoT Analysis:</strong> {ans_dict['chain_of_thought_reasoning']}<br><br><strong>Recommendation:</strong> {ans_dict['maintenance_recommendation']}<br><br><strong>Urgency:</strong> Fix within {ans_dict['repair_urgency_hours']} hours."
+    except Exception as e:
+        formatted_answer = raw_json
+
+    return jsonify({"answer": formatted_answer})
 
 if __name__ == '__main__':
     ensure_dirs()

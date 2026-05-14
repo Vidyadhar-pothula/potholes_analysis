@@ -272,11 +272,23 @@
                             <div class="stat-grid">
                                 <div class="stat-item">
                                     <span class="lbl">Area:</span>
-                                    <span class="val">{{ feat.area_m2 }} m&sup2; (approx)</span>
+                                    <span class="val">{{ feat.area_m2 }} m&sup2;</span>
                                 </div>
                                 <div class="stat-item">
-                                    <span class="lbl">Depth:</span>
-                                    <span class="val">{{ feat.depth_cat }} ({{ feat.depth_cm }})</span>
+                                    <span class="lbl">Max Depth:</span>
+                                    <span class="val">{{ feat.depth_cm }}</span>
+                                </div>
+                                <div class="stat-item" style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed #2a2a3e;">
+                                    <span class="lbl" style="color:#60a5fa;">3D Volume:</span>
+                                    <span class="val">{{ feat.volume_cm3 }} cm&sup3;</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="lbl">Edge Risk:</span>
+                                    <span class="val">{{ feat.edge_sharpness }} (Var)</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="lbl">Priority Score:</span>
+                                    <span class="val" style="color:#f87171; font-weight:700;">{{ feat.priority_score }}/100</span>
                                 </div>
                             </div>
                         </div>
@@ -337,7 +349,7 @@
                 // Add bot message
                 const botMsg = document.createElement('div');
                 botMsg.className = 'msg bot';
-                botMsg.innerText = data.answer;
+                botMsg.innerHTML = data.answer;
                 logEl.appendChild(botMsg);
                 logEl.scrollTop = logEl.scrollHeight;
             } catch (err) {

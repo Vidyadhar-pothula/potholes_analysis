@@ -8,6 +8,8 @@ import os
 import cv2
 import csv
 import numpy as np
+from geometry_engine import GeometryEngine
+from physics_severity import PhysicsSeverityEngine
 
 def load_triplet(image_path: str, mask_path: str, depth_path: str):
     image = cv2.imread(image_path)
@@ -78,30 +80,37 @@ def extract_features(
         # Phase 1: Real-world area
         area_m2 = round(area * 0.0005, 2)
 
-        # Phase 2: Relative Depth
-        norm_depth = avg_depth / 255.0
+        # New Physics-Based Integration
+        geom_engine = GeometryEngine()
+        phys_engine = PhysicsSeverityEngine()
+
+        # Try to load metric depth if available, otherwise use proxy
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_name = os.path.splitext(image_name)[0]
+        metric_path = os.path.join(base_dir, 'outputs', 'metric_depth', f"{base_name}_metric.npy")
         
-        if norm_depth < 0.3:
-            depth_cat = "Shallow"
-            depth_cm = "~3 cm"
-        elif norm_depth <= 0.6:
-            depth_cat = "Moderate"
-            depth_cm = "~8 cm"
+        if os.path.exists(metric_path):
+            metric_depth_map = np.load(metric_path)
         else:
-            depth_cat = "Deep"
-            depth_cm = "~18 cm"
+            # Proxy metric depth from grayscale
+            metric_depth_map = (pothole_depth / 255.0) * 25.0
+
+        volume_cm3 = geom_engine.compute_volume(metric_depth_map, region_mask / 255.0)
+        edge_sharpness = geom_engine.compute_edge_sharpness(region_mask / 255.0, metric_depth_map)
+        
+        max_depth_cm = float(np.max(metric_depth_map[region_mask == 255])) if np.any(region_mask == 255) else 0.0
 
         # Phase 3: Severity Logic
-        severity_score = area_m2 * norm_depth
-        if severity_score < 0.2:
-            severity = "Low"
-        elif severity_score <= 0.6:
-            severity = "Medium"
-        else:
-            severity = "High"
+        priority_score, severity = phys_engine.calculate_severity(area_m2, max_depth_cm, volume_cm3, edge_sharpness)
+
+        # Legacy variables for compatibility
+        norm_depth = avg_depth / 255.0
+        depth_cat = "Shallow" if norm_depth < 0.3 else ("Moderate" if norm_depth <= 0.6 else "Deep")
+        depth_cm = f"~{max_depth_cm:.1f} cm"
 
         # Phase 7: Debug Print
-        print(f"ID {pothole_id} -> pixel_area: {area}, normalized_depth: {norm_depth:.2f}, computed area_m2: {area_m2}, severity_score: {severity_score:.2f}")
+        print(f"ID {pothole_id} -> area: {area_m2}m2, depth: {max_depth_cm:.1f}cm, vol: {volume_cm3:.1f}cm3, priority: {priority_score}, severity: {severity}")
+
 
         features.append({
             'pothole_id': pothole_id,
@@ -111,8 +120,11 @@ def extract_features(
             'norm_depth': round(norm_depth, 2),
             'depth_cat': depth_cat,
             'depth_cm': depth_cm,
+            'volume_cm3': round(volume_cm3, 1),
+            'edge_sharpness': round(edge_sharpness, 2),
+            'priority_score': priority_score,
             'severity': severity,
-            'severity_score': round(severity_score, 2),
+            'severity_score': priority_score, # For legacy UI compat
             'bbox_x': x,
             'bbox_y': y,
             'bbox_w': w,

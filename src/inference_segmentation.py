@@ -13,20 +13,30 @@ def generate_segmentation_masks(image_dir, output_dir, model_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Targeting: {device}")
     
-    model = get_model(num_classes=1)
-    
     # Load RGBD model weights
     rgbd_model_path = model_path.replace('deeplab_model.pth', 'deeplab_rgbd_best.pth')
-    if not os.path.exists(rgbd_model_path):
-        print(f"[Warning] RGBD model not found at {rgbd_model_path}, trying original {model_path}")
-        rgbd_model_path = model_path
-
+    use_rgbd = False
+    
     if os.path.exists(rgbd_model_path):
+        model = get_model(num_classes=1)
         model.load_state_dict(torch.load(rgbd_model_path, map_location=device))
         print(f"Loaded weights from {rgbd_model_path}")
+        use_rgbd = True
     else:
-        print(f"[ERROR] Trained model weights not found.")
-        return
+        print(f"[Warning] RGBD model not found at {rgbd_model_path}, trying original {model_path}")
+        from torchvision.models.segmentation import deeplabv3_resnet50
+        import torch.nn as nn
+        model = deeplabv3_resnet50(weights=None)
+        model.classifier[4] = nn.Conv2d(256, 1, kernel_size=(1, 1), stride=(1, 1))
+        if model.aux_classifier is not None:
+            model.aux_classifier[4] = nn.Conv2d(256, 1, kernel_size=(1, 1), stride=(1, 1))
+            
+        if os.path.exists(model_path):
+            model.load_state_dict(torch.load(model_path, map_location=device))
+            print(f"Loaded legacy weights from {model_path}")
+        else:
+            print(f"[ERROR] Trained model weights not found.")
+            return
         
     model.to(device)
     model.eval()
@@ -88,8 +98,11 @@ def generate_segmentation_masks(image_dir, output_dir, model_path):
             depth = np.expand_dims(depth, axis=-1)
             
             # 4-Channel Concatenation
-            rgbd = np.concatenate([image_resized, depth], axis=-1)
-            input_tensor = torch.from_numpy(rgbd).permute(2, 0, 1).unsqueeze(0).float().to(device)
+            if use_rgbd:
+                rgbd = np.concatenate([image_resized, depth], axis=-1)
+                input_tensor = torch.from_numpy(rgbd).permute(2, 0, 1).unsqueeze(0).float().to(device)
+            else:
+                input_tensor = torch.from_numpy(image_resized).permute(2, 0, 1).unsqueeze(0).float().to(device)
             
             # 4. Infer
             output = model(input_tensor)['out']
