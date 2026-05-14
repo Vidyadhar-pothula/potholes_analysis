@@ -2,38 +2,37 @@ import os
 import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-from PIL import Image
-import torchvision.transforms as transforms
+import cv2
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 from sklearn.model_selection import train_test_split
 
-class PotholeDataset(Dataset):
+class PotholeRGBDDataset(Dataset):
     """
-    Custom PyTorch Dataset for loading pothole images and their corresponding masks.
+    Custom PyTorch Dataset for loading pothole RGB images, Depth maps, and their corresponding masks.
+    Outputs a 4-channel [R, G, B, D] tensor.
     """
-    def __init__(self, image_paths, mask_dir, img_size=(512, 512), is_train=False):
+    def __init__(self, image_paths, mask_dir, depth_dir, img_size=(512, 512), is_train=False):
         self.image_paths = image_paths
         self.mask_dir = mask_dir
+        self.depth_dir = depth_dir
         self.img_size = img_size
         self.is_train = is_train
         
-        # Build transform list
-        transform_list = [transforms.Resize(self.img_size)]
-        
-        # Apply photometric augmentations for training data
+        # Albumentations setup
         if self.is_train:
-            transform_list.extend([
-                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-                transforms.RandomAdjustSharpness(sharpness_factor=2, p=0.5),
-                transforms.RandomAutocontrast(p=0.5)
-            ])
-            
-        transform_list.extend([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                                 std=[0.229, 0.224, 0.225])
-        ])
-        
-        self.img_transform = transforms.Compose(transform_list)
+            self.transform = A.Compose([
+                A.Resize(self.img_size[0], self.img_size[1]),
+                A.HorizontalFlip(p=0.5),
+                A.Rotate(limit=30, p=0.5),
+                A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+                A.GaussianBlur(blur_limit=(3, 7), p=0.5),
+                # A.RandomCrop can be added here if images are larger than img_size
+            ], additional_targets={'depth': 'image'})
+        else:
+            self.transform = A.Compose([
+                A.Resize(self.img_size[0], self.img_size[1])
+            ], additional_targets={'depth': 'image'})
 
     def __len__(self):
         return len(self.image_paths)
@@ -41,89 +40,97 @@ class PotholeDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.image_paths[idx]
         image_name = os.path.basename(img_path)
-        
-        # 1. Load and transform the image
-        try:
-            image = Image.open(img_path).convert("RGB")
-        except Exception as e:
-            print(f"Error loading image {img_path}: {e}")
-            # Fallback to an empty image if failed
-            image = Image.new('RGB', self.img_size)
-            
-        image = self.img_transform(image)
-        
-        # 2. Attempt to load the mask; gracefully handle if missing
         base_name = os.path.splitext(image_name)[0]
-        mask_path = os.path.join(self.mask_dir, base_name + '.png')
         
-        if os.path.exists(mask_path):
-            try:
-                # Load mask as grayscale
-                mask = Image.open(mask_path).convert("L")
-                mask = mask.resize(self.img_size, Image.NEAREST)
-                
-                # Convert to binary tensor (0 or 1)
-                mask_np = np.array(mask)
-                mask_tensor = torch.from_numpy(mask_np).float()
-                mask_tensor = (mask_tensor > 0).float() # Positive values become 1
-            except Exception as e:
-                print(f"Error loading mask {mask_path}, using empty mask. Error: {e}")
-                mask_tensor = torch.zeros((self.img_size[0], self.img_size[1]), dtype=torch.float32)
+        # 1. Load RGB image
+        image = cv2.imread(img_path)
+        if image is not None:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         else:
-            # Fallback if mask is missing: empty mask (meaning no pothole / background)
-            mask_tensor = torch.zeros((self.img_size[0], self.img_size[1]), dtype=torch.float32)
+            image = np.zeros((self.img_size[0], self.img_size[1], 3), dtype=np.uint8)
+            
+        # 2. Load Depth Map
+        # Find matching depth map (can be .png, .jpg, etc.)
+        depth_path = None
+        for ext in ['.png', '.jpg', '.jpeg']:
+            candidate = os.path.join(self.depth_dir, base_name + ext)
+            if os.path.exists(candidate):
+                depth_path = candidate
+                break
+                
+        if depth_path and os.path.exists(depth_path):
+            depth = cv2.imread(depth_path, cv2.IMREAD_GRAYSCALE)
+            if depth is None:
+                depth = np.zeros(image.shape[:2], dtype=np.uint8)
+        else:
+            depth = np.zeros(image.shape[:2], dtype=np.uint8)
+            
+        # 3. Load Mask
+        mask_path = os.path.join(self.mask_dir, base_name + '.png')
+        if os.path.exists(mask_path):
+            mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+            if mask is None:
+                mask = np.zeros(image.shape[:2], dtype=np.uint8)
+            else:
+                mask = (mask > 127).astype(np.float32)
+        else:
+            mask = np.zeros(image.shape[:2], dtype=np.float32)
 
-        # Add channel dimension (1, H, W)
-        mask_tensor = mask_tensor.unsqueeze(0)
+        # 4. Apply Augmentations
+        augmented = self.transform(image=image, mask=mask, depth=depth)
+        aug_img = augmented['image']
+        aug_mask = augmented['mask']
+        aug_depth = augmented['depth']
+        
+        # 5. Normalize and create 4-channel tensor
+        # RGB Normalization
+        aug_img = aug_img.astype(np.float32) / 255.0
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        aug_img = (aug_img - mean) / std
+        
+        # Depth Normalization (0 to 1)
+        aug_depth = aug_depth.astype(np.float32) / 255.0
+        # Expand depth dims
+        aug_depth = np.expand_dims(aug_depth, axis=-1)
+        
+        # Concatenate [R, G, B, D]
+        rgbd = np.concatenate([aug_img, aug_depth], axis=-1)
+        
+        # To Tensor (C, H, W)
+        rgbd_tensor = torch.from_numpy(rgbd).permute(2, 0, 1).float()
+        mask_tensor = torch.from_numpy(aug_mask).unsqueeze(0).float()
+        
+        return rgbd_tensor, mask_tensor
 
-        # 3. Output image tensor and mask tensor
-        return image, mask_tensor
-
-def get_dataloaders(image_dir='dataset/images', mask_dir='dataset/masks', batch_size=8):
-    """
-    Scans the directory for images, splits them (70/20/10), and returns DataLoaders.
-    """
+def get_dataloaders(image_dir='dataset/images', mask_dir='dataset/masks', depth_dir='outputs/depth', batch_size=8):
     all_images = []
-    
-    # Collect all valid image locations
     if os.path.exists(image_dir):
         for f in os.listdir(image_dir):
             if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif')):
                 all_images.append(os.path.join(image_dir, f))
-    else:
-        print(f"Warning: Directory not found -> {image_dir}")
                 
     if len(all_images) == 0:
         print(f"Warning: No valid images found in {image_dir}")
         return None, None, None
         
-    # Split: Train=70%, Val=20%, Test=10%
     if len(all_images) > 2:
-        # Separate 70% for train, 30% for remainder (val+test)
         train_paths, temp_paths = train_test_split(all_images, test_size=0.3, random_state=42)
-        
-        # Split the 30% temp into 20% validation and 10% test sets
-        # 1/3 of 30% is 10% (test size), 2/3 of 30% is 20% (val size)
         if len(temp_paths) > 1:
             val_paths, test_paths = train_test_split(temp_paths, test_size=(1/3), random_state=42)
         else:
             val_paths, test_paths = temp_paths, []
     else:
-        # Gracefully handle extremely small directories (e.g. <3 files)
         train_paths, val_paths, test_paths = all_images, [], []
 
-    print(f"Dataset split finalized -> Train: {len(train_paths)} | Val: {len(val_paths)} | Test: {len(test_paths)}")
+    print(f"RGBD Dataset split -> Train: {len(train_paths)} | Val: {len(val_paths)} | Test: {len(test_paths)}")
 
-    # Initialize PyTorch Datasets
-    train_dataset = PotholeDataset(train_paths, mask_dir, is_train=True) if train_paths else None
-    val_dataset = PotholeDataset(val_paths, mask_dir, is_train=False) if val_paths else None
-    test_dataset = PotholeDataset(test_paths, mask_dir, is_train=False) if test_paths else None
+    train_dataset = PotholeRGBDDataset(train_paths, mask_dir, depth_dir, is_train=True) if train_paths else None
+    val_dataset = PotholeRGBDDataset(val_paths, mask_dir, depth_dir, is_train=False) if val_paths else None
+    test_dataset = PotholeRGBDDataset(test_paths, mask_dir, depth_dir, is_train=False) if test_paths else None
 
-    # num_workers=0 is safer across operating systems for basic scripts
     num_workers = 0 
     
-    # Initialize PyTorch DataLoaders
-    # Using drop_last=True for train to prevent potential BN issues with singular batches
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
                               num_workers=num_workers, drop_last=(len(train_paths) > batch_size)) if train_dataset else None
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, 
@@ -132,49 +139,3 @@ def get_dataloaders(image_dir='dataset/images', mask_dir='dataset/masks', batch_
                              num_workers=num_workers) if test_dataset else None
 
     return train_loader, val_loader, test_loader
-
-# =========================================================
-# TEST SNIPPET
-# =========================================================
-if __name__ == "__main__":
-    print("--- Running Dataset Pipeline Test ---")
-    
-    # Configure mock directories relying on project root
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    test_image_dir = os.path.join(base_dir, 'dataset', 'images')
-    test_mask_dir = os.path.join(base_dir, 'dataset', 'masks')
-    
-    try:
-        os.makedirs(test_image_dir, exist_ok=True)
-        os.makedirs(test_mask_dir, exist_ok=True)
-        
-        # Populate with dummy data if needed specifically for the test
-        if len(os.listdir(test_image_dir)) == 0:
-            print("Dataset directory is empty. Generating 10 dummy images and 5 masks for local test...")
-            for i in range(10):
-                img_path = os.path.join(test_image_dir, f'test_image_{i}.jpg')
-                # Generate random solid-color background
-                Image.new('RGB', (800, 600), color=(int(np.random.randint(255)), 100, 100)).save(img_path)
-                
-                # Assign mock masks to only 5 images (Testing fallback functionality)
-                if i < 5:
-                    mask_path = os.path.join(test_mask_dir, f'test_image_{i}.jpg')
-                    # Generate random binary 'pothole' mask (0 vs 255)
-                    color = 255 if np.random.rand() > 0.5 else 0
-                    Image.new('L', (800, 600), color=color).save(mask_path)
-        
-        print("\nAttempting to initialize DataLoaders...")
-        train_dl, val_dl, test_dl = get_dataloaders(image_dir=test_image_dir, mask_dir=test_mask_dir, batch_size=4)
-        
-        if train_dl:
-            # Yield single batch
-            images, masks = next(iter(train_dl))
-            print("\n[SUCCESS] Batch loaded successfully via PotholeDataset!")
-            print(f"-> Image tensor shape: {images.shape} (dtype: {images.dtype})")
-            print(f"-> Mask tensor shape:  {masks.shape} (dtype: {masks.dtype})")
-            print(f"-> Unique mask values: {torch.unique(masks).tolist()}     (Expected combinations of 0.0 and 1.0)")
-            
-        else:
-            print("\n[FAILED] Failed to boot dataloaders.")
-    except Exception as e:
-        print(f"\n[ERROR] An error occurred during testing: {e}")
