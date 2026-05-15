@@ -129,7 +129,7 @@ def save_debug_visualization(epoch, rgbd, true_mask, pred_mask, save_dir):
 # =========================================================
 # Training Loop
 # =========================================================
-def train_model(epochs=15, batch_size=4, lr=1e-4):
+def train_model(epochs=10, batch_size=4, lr=1e-4):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Targeting: {device}")
 
@@ -230,4 +230,4 @@ def train_model(epochs=15, batch_size=4, lr=1e-4):
         print(f"[{sev}] IoU: {m['iou']:.4f} | Recall: {m['recall']:.4f} | Prec: {m['precision']:.4f} | F1: {m['f1']:.4f}")
         
 if __name__ == '__main__':
-    train_model(epochs=15, batch_size=4, lr=1e-4)
+    train_model(epochs=5, batch_size=4, lr=1e-4)
